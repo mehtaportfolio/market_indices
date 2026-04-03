@@ -148,16 +148,23 @@ async function runJob() {
   }
 
   isRunning = true;
-  console.log("🚀 Job started:", new Date().toLocaleString("en-IN"));
+  const istTimestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  console.log("🚀 Job started:", istTimestamp);
 
   try {
     const nseData = await fetchNSE();
     const sensexData = await fetchSensex();
 
-    const finalData = [...nseData];
+    const finalData = nseData.map(item => ({
+      ...item,
+      created: istTimestamp
+    }));
 
     if (sensexData) {
-      finalData.push(sensexData);
+      finalData.push({
+        ...sensexData,
+        created: istTimestamp
+      });
     }
 
     await insertIntoDB(finalData);
@@ -224,4 +231,5 @@ cron.schedule("*/5 * * * *", () => {
 // ===============================
 app.listen(PORT, () => {
   console.log(`🌐 Server running on port ${PORT}`);
+  runJob();
 });
