@@ -21,8 +21,23 @@ const supabase = createClient(
 // ===============================
 // Middleware
 // ===============================
+const allowedOrigins = (process.env.FRONTEND_URL || "")
+  .split(",")
+  .map(o => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "*",
+  origin: function (origin, callback) {
+    // allow server-to-server (cron, curl, supabase, etc.)
+    if (!origin) return callback(null, true);
+
+    // allow only whitelisted frontend origins
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("Not allowed by CORS"));
+  },
   methods: ["GET", "POST"]
 }));
 
@@ -175,22 +190,26 @@ async function runJob() {
   }
 
   isRunning = true;
-  const istTimestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+
+const istTimestamp = new Date().toISOString();
+
   console.log("🚀 Job started:", istTimestamp);
 
   try {
     const nseData = await fetchNSE();
     const sensexData = await fetchSensex();
 
-    const finalData = nseData.map(item => ({
+    const nseDataSafe = Array.isArray(nseData) ? nseData : [];
+
+    const finalData = nseDataSafe.map(item => ({
       ...item,
-      created: istTimestamp
+      updated_at: istTimestamp
     }));
 
     if (sensexData) {
       finalData.push({
         ...sensexData,
-        created: istTimestamp
+        updated_at: istTimestamp
       });
     }
 
@@ -198,9 +217,10 @@ async function runJob() {
 
   } catch (err) {
     console.error("❌ Job failed:", err.message);
-  }
 
-  isRunning = false;
+  } finally {
+    isRunning = false;
+  }
 }
 
 // ===============================
@@ -230,10 +250,6 @@ app.get("/health", (req, res) => {
 app.get("/trigger", async (req, res) => {
   if (req.query.key !== process.env.CRON_SECRET) {
     return res.status(403).send("Unauthorized");
-  }
-
-  if (!isMarketOpen()) {
-    return res.json({ message: "Market closed" });
   }
 
   await runJob();
